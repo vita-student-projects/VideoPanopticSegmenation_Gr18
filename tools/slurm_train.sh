@@ -21,4 +21,4 @@ srun -p ${PARTITION} \
     --cpus-per-task=${CPUS_PER_TASK} \
     --kill-on-bad-exit=1 \
     ${SRUN_ARGS} \
-    python -u /home/nabiakl/Video-K-Net/tools/train.py ${CONFIG} --work-dir=${WORK_DIR} --launcher="slurm" ${PY_ARGS}
+    python -u /home/nabiakl/Video-K-Net/tools/train.py ${CONFIG} --work-dir=${WORK_DIR} --resume-from "/home/nabiakl/Video-K-Net/work_dir_waymo_5_cameras/epoch_6.pth" --launcher="slurm" ${PY_ARGS}

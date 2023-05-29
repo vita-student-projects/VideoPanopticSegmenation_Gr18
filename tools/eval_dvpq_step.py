@@ -15,7 +15,7 @@ args = parser.parse_args()
 eval_frames = args.eval_frames
 pred_dir_all = os.path.join(args.result_path, "panoptic")
 depth_dir_all = os.path.join(args.result_path, "depth")
-gt_dir = "/home/nabiakl/kitti_out/video_sequence/val/"
+gt_dir = "/home/nabiakl/waymo_out/video_sequence/val/"
 depth_thres = args.depth_thres
 
 
@@ -150,6 +150,8 @@ def main():
     gt_names_all = [os.path.join(gt_dir, name) for name in gt_names_all]
     gt_names_all = sorted(gt_names_all)
 
+    print("get gt_names_all ", gt_names_all)
+
     if args.depth_thres > 0:
         depth_gt_names_all = os.scandir(gt_dir)
         depth_gt_names_all = [
@@ -167,9 +169,41 @@ def main():
     things_index[11] = True
     things_index[13] = True
 
-    for i in [2, 6, 7, 8, 10, 13, 14, 16, 18]:
+    for seq_id in [
+        # test of Kitti on waymo new prepared val
+        "037765_1",
+        "037765_2",
+        "037765_3",
+        "037765_4",
+        "037765_5",  # 100161
+        "093264_1",
+        "093264_2",
+        "093264_3",
+        "093264_4",
+        "093264_5",  # 100260
+        "112983_1",
+        "112983_2",
+        "112983_3",
+        "112983_4",
+        "112983_5",  # 100596
+        "364251_1",
+        "364251_2",
+        "364251_3",
+        "364251_4",
+        "364251_5",  # 100001
+        "465142_1",
+        "465142_2",
+        "465142_3",
+        "465142_4",
+        "465142_5",  # 100101
+        "791236_1",
+        "791236_2",
+        "791236_3",
+        "791236_4",
+        "791236_5",  # 100501
+    ]:
         if args.depth_thres > 0:
-            depth_dir = os.path.join(depth_dir_all, str(i))
+            depth_dir = os.path.join(depth_dir_all, str(seq_id))
             depth_pred_names = os.scandir(depth_dir)
             depth_pred_names = [name.name for name in depth_pred_names]
             depth_pred_names = [
@@ -177,9 +211,13 @@ def main():
             ]
             depth_pred_names = sorted(depth_pred_names)
 
-        pred_dir = os.path.join(pred_dir_all, str(i))
+        pred_dir = os.path.join(pred_dir_all)
         pred_names = os.scandir(pred_dir)
-        pred_names = [os.path.join(pred_dir, name.name) for name in pred_names]
+        pred_names = [
+            os.path.join(pred_dir, name.name)
+            for name in pred_names
+            if name.name.startswith(seq_id)
+        ]
         cat_pred_names = [name for name in pred_names if name.endswith("cat.png")]
         ins_pred_names = [name for name in pred_names if name.endswith("ins.png")]
         cat_pred_names = sorted(cat_pred_names)
@@ -189,16 +227,18 @@ def main():
         gt_names = sorted(
             list(
                 filter(
-                    lambda x: os.path.basename(x).startswith("{:06d}".format(i)),
+                    lambda x: os.path.basename(x).startswith(seq_id),
                     gt_names_all,
                 )
             )
         )
+
+        print("gt_names ", gt_names)
         if args.depth_thres > 0:
             depth_gt_names = sorted(
                 list(
                     filter(
-                        lambda x: os.path.basename(x).startswith("{:06d}".format(i)),
+                        lambda x: os.path.basename(x).startswith(seq_id),
                         depth_gt_names_all,
                     )
                 )

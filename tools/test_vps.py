@@ -26,7 +26,7 @@ def single_gpu_test(
     show_score_thr=0.3,
     with_semantic_input=False,
     rescale_depth=False,
-    with_seq=True,
+    with_seq=False,
 ):
     if out_dir is None:
         out_dir = "./out"
@@ -276,7 +276,7 @@ def main():
         args.show_score_thr,
         with_semantic_input=args.semantic,
         rescale_depth=args.rescale_depth,
-        with_seq=True,
+        with_seq=False,
     )
     print("==>Inference Depth VPS Done!")
 

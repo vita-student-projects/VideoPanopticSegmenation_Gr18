@@ -1,59 +1,79 @@
 import warnings
+
 import numpy as np
 import torch
-import torch.nn.functional as F
 import torch.nn as nn
-from mmcv.cnn import (ConvModule, bias_init_with_prob,
-                      build_activation_layer, build_norm_layer)
-from mmdet.models.builder import DETECTORS
-from mmdet.models.detectors import BaseDetector
-from mmdet.models.builder import build_head, build_neck, build_backbone, build_roi_extractor
+import torch.nn.functional as F
+from mmcv.cnn import (
+    ConvModule,
+    bias_init_with_prob,
+    build_activation_layer,
+    build_norm_layer,
+)
 from mmdet.core import build_assigner, build_sampler
+from mmdet.models.builder import (
+    DETECTORS,
+    build_backbone,
+    build_head,
+    build_neck,
+    build_roi_extractor,
+)
+from mmdet.models.detectors import BaseDetector
+
+from knet.det.utils import (
+    sem2ins_masks,
+    sem2ins_masks_cityscapes,
+    sem2ins_masks_kitti_step,
+)
 from knet.video.qdtrack.builder import build_tracker
-from knet.det.utils import sem2ins_masks, sem2ins_masks_cityscapes, sem2ins_masks_kitti_step
 from unitrack.mask import tensor_mask2box
 
 
 @DETECTORS.register_module()
 class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
     """
-        Simple Extension of KNet to Video KNet by the implementation of VPSFuse Net.
+    Simple Extension of KNet to Video KNet by the implementation of VPSFuse Net.
     """
-    def __init__(self,
-                 backbone,
-                 neck=None,
-                 rpn_head=None,
-                 roi_head=None,
-                 track_head=None,
-                 extra_neck=None,
-                 track_localization_fpn=None,
-                 tracker=None,
-                 train_cfg=None,
-                 test_cfg=None,
-                 track_train_cfg=None,
-                 pretrained=None,
-                 init_cfg=None,
-                 num_thing_classes=80,
-                 num_stuff_classes=53,
-                 mask_assign_stride=4,
-                 ignore_label=255,
-                 thing_label_in_seg=0,
-                 detach_mask_emd=False,
-                 cityscapes=False,
-                 kitti_step=False,
-                 cityscapes_short=False,
-                 vipseg=False,
-                 freeze_detector=False,
-                 semantic_filter=True,
-                 # linking parameters
-                 link_previous=False,
-                 bbox_roi_extractor=None,
-                 **kwargs):
+
+    def __init__(
+        self,
+        backbone,
+        neck=None,
+        rpn_head=None,
+        roi_head=None,
+        track_head=None,
+        extra_neck=None,
+        track_localization_fpn=None,
+        tracker=None,
+        train_cfg=None,
+        test_cfg=None,
+        track_train_cfg=None,
+        pretrained=None,
+        init_cfg=None,
+        num_thing_classes=80,
+        num_stuff_classes=53,
+        mask_assign_stride=4,
+        ignore_label=255,
+        thing_label_in_seg=0,
+        detach_mask_emd=False,
+        cityscapes=False,
+        kitti_step=False,
+        cityscapes_short=False,
+        vipseg=False,
+        freeze_detector=False,
+        semantic_filter=True,
+        # linking parameters
+        link_previous=False,
+        bbox_roi_extractor=None,
+        **kwargs
+    ):
         super(VideoKNetQuansiEmbedFCJointTrain, self).__init__(init_cfg)
 
         if pretrained:
-            warnings.warn('DeprecationWarning: pretrained is deprecated, '
-                          'please use "init_cfg" instead')
+            warnings.warn(
+                "DeprecationWarning: pretrained is deprecated, "
+                'please use "init_cfg" instead'
+            )
             backbone.pretrained = pretrained
         self.backbone = build_backbone(backbone)
 
@@ -86,14 +106,13 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
                 self.track_localization_fpn = build_neck(track_localization_fpn)
 
             if bbox_roi_extractor is not None:
-                self.track_roi_extractor = build_roi_extractor(
-                    bbox_roi_extractor)
+                self.track_roi_extractor = build_roi_extractor(bbox_roi_extractor)
 
         if tracker is not None:
             self.tracker_cfg = tracker
 
         if freeze_detector:
-           self._freeze_detector()
+            self._freeze_detector()
 
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
@@ -103,8 +122,12 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
         self.mask_assign_stride = mask_assign_stride
         self.thing_label_in_seg = thing_label_in_seg
         self.ignore_label = ignore_label
-        self.cityscapes = cityscapes  # whether to train the cityscape panoptic segmentation
-        self.kitti_step = kitti_step  # whether to train the kitti step panoptic segmentation
+        self.cityscapes = (
+            cityscapes  # whether to train the cityscape panoptic segmentation
+        )
+        self.kitti_step = (
+            kitti_step  # whether to train the kitti step panoptic segmentation
+        )
         self.cityscapes_short = cityscapes_short  # whether to test the cityscape short panoptic segmentation
         self.vipseg = vipseg  # whether to test the vip panoptic segmentation
         self.semantic_filter = semantic_filter
@@ -112,15 +135,13 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
         self.detach_mask_emd = detach_mask_emd
         # add embedding fcs for the final stage queries
         num_emb_fcs = 1
-        act_cfg = dict(type='ReLU', inplace=True)
+        act_cfg = dict(type="ReLU", inplace=True)
         in_channels = 256
         out_channels = 256
         self.embed_fcs = nn.ModuleList()
         for _ in range(num_emb_fcs):
-            self.embed_fcs.append(
-                nn.Linear(in_channels, in_channels, bias=False))
-            self.embed_fcs.append(
-                build_norm_layer(dict(type='LN'), in_channels)[1])
+            self.embed_fcs.append(nn.Linear(in_channels, in_channels, bias=False))
+            self.embed_fcs.append(build_norm_layer(dict(type="LN"), in_channels)[1])
             self.embed_fcs.append(build_activation_layer(act_cfg))
 
         self.fc_embed = nn.Linear(in_channels, out_channels)
@@ -129,10 +150,7 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
         self.tracker = build_tracker(self.tracker_cfg)
 
     def _freeze_detector(self):
-
-        self.detector = [
-            self.rpn_head, self.roi_head
-        ]
+        self.detector = [self.rpn_head, self.roi_head]
         for model in self.detector:
             model.eval()
             for param in model.parameters():
@@ -141,12 +159,12 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
     def init_track_assigner_sampler(self):
         """Initialize assigner and sampler."""
 
-        self.track_roi_assigner = build_assigner(
-            self.track_train_cfg.assigner)
+        self.track_roi_assigner = build_assigner(self.track_train_cfg.assigner)
         self.track_share_assigner = False
 
         self.track_roi_sampler = build_sampler(
-            self.track_train_cfg.sampler, context=self)
+            self.track_train_cfg.sampler, context=self
+        )
         self.track_share_sampler = False
 
     def preprocess_gt_masks(self, img_metas, gt_masks, gt_labels, gt_semantic_seg):
@@ -155,7 +173,7 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
         gt_sem_seg = []
         gt_sem_cls = []
         # batch_input_shape shoud be the same across images
-        pad_H, pad_W = img_metas[0]['batch_input_shape']
+        pad_H, pad_W = img_metas[0]["batch_input_shape"]
         assign_H = pad_H // self.mask_assign_stride
         assign_W = pad_W // self.mask_assign_stride
 
@@ -169,41 +187,52 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
                 # gt_semantic seg is padded by zero when forming a batch
                 # need to convert them from 0 to ignore
                 gt_semantic_seg[
-                i, :, img_metas[i]['img_shape'][0]:, :] = self.ignore_label
+                    i, :, img_metas[i]["img_shape"][0] :, :
+                ] = self.ignore_label
                 gt_semantic_seg[
-                i, :, :, img_metas[i]['img_shape'][1]:] = self.ignore_label
+                    i, :, :, img_metas[i]["img_shape"][1] :
+                ] = self.ignore_label
 
                 if self.cityscapes or self.vipseg:
                     sem_labels, sem_seg = sem2ins_masks_cityscapes(
                         gt_semantic_seg[i],
                         ignore_label=self.ignore_label,
                         label_shift=self.num_thing_classes,
-                        thing_label_in_seg=list(range(self.num_stuff_classes,
-                                                      self.num_thing_classes + self.num_stuff_classes))
+                        thing_label_in_seg=list(
+                            range(
+                                self.num_stuff_classes,
+                                self.num_thing_classes + self.num_stuff_classes,
+                            )
+                        ),
                     )
                 elif self.kitti_step:
                     sem_labels, sem_seg = sem2ins_masks_kitti_step(
                         gt_semantic_seg[i],
                         ignore_label=self.ignore_label,
                         label_shift=2,
-                        thing_label_in_seg=(11, 13))
+                        thing_label_in_seg=(11, 13),
+                    )
                 else:
                     sem_labels, sem_seg = sem2ins_masks(
                         gt_semantic_seg[i],
                         ignore_label=self.ignore_label,
                         label_shift=self.num_thing_classes,
-                        thing_label_in_seg=self.thing_label_in_seg)
+                        thing_label_in_seg=self.thing_label_in_seg,
+                    )
 
                 if sem_seg.shape[0] == 0:
                     gt_sem_seg.append(
-                        mask_tensor.new_zeros(
-                            (mask_tensor.size(0), assign_H, assign_W)))
+                        mask_tensor.new_zeros((mask_tensor.size(0), assign_H, assign_W))
+                    )
                 else:
                     gt_sem_seg.append(
                         F.interpolate(
-                            sem_seg[None], (assign_H, assign_W),
-                            mode='bilinear',
-                            align_corners=False)[0])
+                            sem_seg[None],
+                            (assign_H, assign_W),
+                            mode="bilinear",
+                            align_corners=False,
+                        )[0]
+                    )
                 gt_sem_cls.append(sem_labels)
             else:
                 gt_sem_seg = None
@@ -211,36 +240,41 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
 
             if mask_tensor.shape[0] == 0:
                 gt_masks_tensor.append(
-                    mask_tensor.new_zeros(
-                        (mask_tensor.size(0), assign_H, assign_W)))
+                    mask_tensor.new_zeros((mask_tensor.size(0), assign_H, assign_W))
+                )
             else:
                 gt_masks_tensor.append(
                     F.interpolate(
-                        mask_tensor[None], (assign_H, assign_W),  # downsample to 1/4 resolution
-                        mode='bilinear',
-                        align_corners=False)[0])
+                        mask_tensor[None],
+                        (assign_H, assign_W),  # downsample to 1/4 resolution
+                        mode="bilinear",
+                        align_corners=False,
+                    )[0]
+                )
 
         return gt_masks_tensor, gt_sem_cls, gt_sem_seg
 
-    def forward_train(self,
-                      img,
-                      img_metas,
-                      gt_bboxes=None,
-                      gt_labels=None,
-                      gt_bboxes_ignore=None,
-                      gt_masks=None,
-                      gt_semantic_seg=None,
-                      gt_instance_ids=None,
-                      ref_img=None,
-                      ref_img_metas=None,
-                      ref_gt_bboxes_ignore=None,
-                      ref_gt_labels=None,
-                      ref_gt_bboxes=None,
-                      ref_gt_masks=None,
-                      ref_gt_semantic_seg=None,
-                      ref_gt_instance_ids=None,
-                      proposals=None,
-                      **kwargs):
+    def forward_train(
+        self,
+        img,
+        img_metas,
+        gt_bboxes=None,
+        gt_labels=None,
+        gt_bboxes_ignore=None,
+        gt_masks=None,
+        gt_semantic_seg=None,
+        gt_instance_ids=None,
+        ref_img=None,
+        ref_img_metas=None,
+        ref_gt_bboxes_ignore=None,
+        ref_gt_labels=None,
+        ref_gt_bboxes=None,
+        ref_gt_masks=None,
+        ref_gt_semantic_seg=None,
+        ref_gt_instance_ids=None,
+        proposals=None,
+        **kwargs
+    ):
         """Forward function of SparseR-CNN-like network in train stage.
 
         Args:
@@ -290,10 +324,9 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
         """
         batch_input_shape = tuple(img[0].size()[-2:])
         for img_meta in img_metas:
-            img_meta['batch_input_shape'] = batch_input_shape
+            img_meta["batch_input_shape"] = batch_input_shape
 
-        assert proposals is None, 'KNet does not support' \
-                                  ' external proposals'
+        assert proposals is None, "KNet does not support" " external proposals"
         assert gt_masks is not None
         assert gt_instance_ids is not None
 
@@ -313,11 +346,11 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
 
         ref_gt_instance_id_list = []
         for ref_gt_instance_id in ref_gt_instance_ids:
-            ref_gt_instance_id_list.append(ref_gt_instance_id[:,1].long())
+            ref_gt_instance_id_list.append(ref_gt_instance_id[:, 1].long())
 
         ref_img_metas_new = []
         for ref_img_meta in ref_img_metas:
-            ref_img_meta[0]['batch_input_shape'] = batch_input_shape
+            ref_img_meta[0]["batch_input_shape"] = batch_input_shape
             ref_img_metas_new.append(ref_img_meta[0])
 
         # prepare the gt_match_indices
@@ -331,28 +364,46 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
         gt_match_indices = gt_pids_list
 
         # gt_masks and gt_semantic_seg are not padded when forming batch
-        gt_masks, gt_sem_cls, gt_sem_seg = self.preprocess_gt_masks(img_metas, gt_masks, gt_labels, gt_semantic_seg)
-        ref_gt_masks, ref_gt_sem_cls, ref_gt_sem_seg = self.preprocess_gt_masks(ref_img_metas_new,
-                                                                    ref_masks_gt, ref_gt_labels, ref_semantic_seg_gt)
+        gt_masks, gt_sem_cls, gt_sem_seg = self.preprocess_gt_masks(
+            img_metas, gt_masks, gt_labels, gt_semantic_seg
+        )
+        ref_gt_masks, ref_gt_sem_cls, ref_gt_sem_seg = self.preprocess_gt_masks(
+            ref_img_metas_new, ref_masks_gt, ref_gt_labels, ref_semantic_seg_gt
+        )
 
         x = self.extract_feat(img)
         x_ref = self.extract_feat(ref_img)
 
-        rpn_results = self.rpn_head.forward_train(x, img_metas, gt_masks,
-                                                  gt_labels, gt_sem_seg,
-                                                  gt_sem_cls)
+        rpn_results = self.rpn_head.forward_train(
+            x, img_metas, gt_masks, gt_labels, gt_sem_seg, gt_sem_cls
+        )
 
-        ref_rpn_results = self.rpn_head.forward_train(x_ref, ref_img_metas_new, ref_gt_masks,
-                                                      ref_labels_gt, ref_gt_sem_seg,
-                                                      ref_gt_sem_cls)
+        ref_rpn_results = self.rpn_head.forward_train(
+            x_ref,
+            ref_img_metas_new,
+            ref_gt_masks,
+            ref_labels_gt,
+            ref_gt_sem_seg,
+            ref_gt_sem_cls,
+        )
 
-        (rpn_losses, proposal_feats, x_feats, mask_preds,
-         cls_scores) = rpn_results
+        (rpn_losses, proposal_feats, x_feats, mask_preds, cls_scores) = rpn_results
 
-        (ref_rpn_losses, ref_proposal_feats, ref_x_feats, ref_mask_preds,
-         ref_cls_scores) = ref_rpn_results
+        (
+            ref_rpn_losses,
+            ref_proposal_feats,
+            ref_x_feats,
+            ref_mask_preds,
+            ref_cls_scores,
+        ) = ref_rpn_results
 
-        losses_ref, ref_obj_feats, ref_cls_scores, ref_mask_preds, ref_scaled_mask_preds = self.roi_head.forward_train(
+        (
+            losses_ref,
+            ref_obj_feats,
+            ref_cls_scores,
+            ref_mask_preds,
+            ref_scaled_mask_preds,
+        ) = self.roi_head.forward_train(
             ref_x_feats,
             ref_proposal_feats,
             ref_mask_preds,
@@ -362,10 +413,18 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
             ref_gt_labels,
             gt_sem_seg=ref_gt_sem_seg,
             gt_sem_cls=ref_gt_sem_cls,
-            imgs_whwh=None)
+            imgs_whwh=None,
+        )
 
         if self.link_previous:
-            losses, object_feats, cls_scores, mask_preds, scaled_mask_preds, object_feats_track = self.roi_head.forward_train_with_previous(
+            (
+                losses,
+                object_feats,
+                cls_scores,
+                mask_preds,
+                scaled_mask_preds,
+                object_feats_track,
+            ) = self.roi_head.forward_train_with_previous(
                 x_feats,
                 proposal_feats,
                 mask_preds,
@@ -384,7 +443,13 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
             )
         else:
             # forward to get the current results
-            losses, object_feats, cls_scores, mask_preds, scaled_mask_preds = self.roi_head.forward_train(
+            (
+                losses,
+                object_feats,
+                cls_scores,
+                mask_preds,
+                scaled_mask_preds,
+            ) = self.roi_head.forward_train(
                 x_feats,
                 proposal_feats,
                 mask_preds,
@@ -396,7 +461,8 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
                 gt_bboxes=gt_bboxes,
                 gt_sem_seg=gt_sem_seg,
                 gt_sem_cls=gt_sem_cls,
-                imgs_whwh=None)
+                imgs_whwh=None,
+            )
 
         # ===== Tracking Part -==== #
         # assign both key frame and reference frame tracking targets
@@ -405,58 +471,80 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
 
         for i in range(num_imgs):
             assign_result = self.track_roi_assigner.assign(
-                scaled_mask_preds[i][:self.num_proposals].detach(), cls_scores[i][:self.num_proposals, :self.num_thing_classes].detach(),
-                gt_masks[i], gt_labels[i], img_meta=img_metas[i])
+                scaled_mask_preds[i][: self.num_proposals].detach(),
+                cls_scores[i][: self.num_proposals, : self.num_thing_classes].detach(),
+                gt_masks[i],
+                gt_labels[i],
+                img_meta=img_metas[i],
+            )
             sampling_result = self.track_roi_sampler.sample(
-                assign_result,
-                mask_preds[i][:self.num_proposals].detach(),
-                gt_masks[i])
+                assign_result, mask_preds[i][: self.num_proposals].detach(), gt_masks[i]
+            )
             key_sampling_results.append(sampling_result)
 
             ref_assign_result = self.track_roi_assigner.assign(
-                ref_scaled_mask_preds[i][:self.num_proposals].detach(), ref_cls_scores[i][:self.num_proposals, :self.num_thing_classes].detach(),
-                ref_gt_masks[i], ref_gt_labels[i], img_meta=ref_img_metas_new[i])
+                ref_scaled_mask_preds[i][: self.num_proposals].detach(),
+                ref_cls_scores[i][
+                    : self.num_proposals, : self.num_thing_classes
+                ].detach(),
+                ref_gt_masks[i],
+                ref_gt_labels[i],
+                img_meta=ref_img_metas_new[i],
+            )
             ref_sampling_result = self.track_roi_sampler.sample(
                 ref_assign_result,
-                ref_mask_preds[i][:self.num_proposals].detach(),
-                ref_gt_masks[i])
+                ref_mask_preds[i][: self.num_proposals].detach(),
+                ref_gt_masks[i],
+            )
             ref_sampling_results.append(ref_sampling_result)
 
         # current is tracking object
         N, num_proposal, _, _, _ = object_feats_track.shape
-        emb_feat = object_feats_track.squeeze(-2).squeeze(-1)[:, :self.num_proposals, ]
+        emb_feat = object_feats_track.squeeze(-2).squeeze(-1)[
+            :,
+            : self.num_proposals,
+        ]
 
         for emb_layer in self.embed_fcs:
             emb_feat = emb_layer(emb_feat)
         object_feats_embed = self.fc_embed(emb_feat).view(N, self.num_proposals, -1)
 
-
-        ref_emb_feat = ref_obj_feats.squeeze(-2).squeeze(-1)[:, :self.num_proposals, ]
+        ref_emb_feat = ref_obj_feats.squeeze(-2).squeeze(-1)[
+            :,
+            : self.num_proposals,
+        ]
         for emb_layer in self.embed_fcs:
             ref_emb_feat = emb_layer(ref_emb_feat)
-        ref_object_feats_embed = self.fc_embed(ref_emb_feat).view(N, self.num_proposals, -1)
+        ref_object_feats_embed = self.fc_embed(ref_emb_feat).view(
+            N, self.num_proposals, -1
+        )
 
         # sampling predicted GT mask
         key_emb_indexs = [res.pos_inds for res in key_sampling_results]
         object_feats_embed_list = []
         for i in range(len(key_emb_indexs)):
-            object_feats_embed_list.append(object_feats_embed[:, key_emb_indexs[i], :].squeeze(0))
+            object_feats_embed_list.append(
+                object_feats_embed[:, key_emb_indexs[i], :].squeeze(0)
+            )
 
         key_feats = self._track_forward(object_feats_embed_list)
 
         ref_emb_indexs = [res.pos_inds for res in ref_sampling_results]
         ref_object_feats_embed_list = []
         for i in range(len(ref_emb_indexs)):
-            ref_object_feats_embed_list.append(ref_object_feats_embed[:, ref_emb_indexs[i], :].squeeze(0))
+            ref_object_feats_embed_list.append(
+                ref_object_feats_embed[:, ref_emb_indexs[i], :].squeeze(0)
+            )
 
         ref_feats = self._track_forward(ref_object_feats_embed_list)
 
-        match_feats = self.track_head.match(key_feats, ref_feats,
-                                            key_sampling_results,
-                                            ref_sampling_results)
+        match_feats = self.track_head.match(
+            key_feats, ref_feats, key_sampling_results, ref_sampling_results
+        )
 
         asso_targets = self.track_head.get_track_targets(
-            gt_match_indices, key_sampling_results, ref_sampling_results)
+            gt_match_indices, key_sampling_results, ref_sampling_results
+        )
         loss_track = self.track_head.loss(*match_feats, *asso_targets)
 
         ref_losses = self.add_ref_loss(losses_ref)
@@ -485,21 +573,26 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
         """
 
         # set the dataset type
-        if self.cityscapes and not self.kitti_step and not self.cityscapes_short and not self.vipseg:
-            iid = img_metas[0]['iid']
+        if (
+            self.cityscapes
+            and not self.kitti_step
+            and not self.cityscapes_short
+            and not self.vipseg
+        ):
+            iid = img_metas[0]["iid"]
             fid = iid % 10000
-            is_first = (fid == 1)
+            is_first = fid == 1
         else:
-            iid = kwargs['img_id'][0].item()
-            fid = iid % 10000
-            is_first = (fid == 0)
+            iid = kwargs["img_id"][0].item()
+            # fid = iid % 100160
+            fid = iid % 100161
+            is_first = fid == 0
 
         # for current frame
         x = self.extract_feat(img)
         # current frame inference
         rpn_results = self.rpn_head.simple_test_rpn(x, img_metas)
-        (proposal_feats, x_feats, mask_preds, cls_scores,
-         seg_preds) = rpn_results
+        (proposal_feats, x_feats, mask_preds, cls_scores, seg_preds) = rpn_results
 
         # init tracker
         if is_first:
@@ -507,11 +600,16 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
             self.obj_feats_memory = None
             self.x_feats_memory = None
             self.mask_preds_memory = None
-            print("fid", fid)
 
         # wheter to link the previous
         if self.link_previous:
-            cur_segm_results, obj_feats, cls_scores, mask_preds, scaled_mask_preds = self.roi_head.simple_test_with_previous(
+            (
+                cur_segm_results,
+                obj_feats,
+                cls_scores,
+                mask_preds,
+                scaled_mask_preds,
+            ) = self.roi_head.simple_test_with_previous(
                 x_feats,
                 proposal_feats,
                 mask_preds,
@@ -520,58 +618,79 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
                 previous_obj_feats=self.obj_feats_memory,
                 previous_mask_preds=self.mask_preds_memory,
                 previous_x_feats=self.x_feats_memory,
-                is_first=is_first
+                is_first=is_first,
             )
             self.obj_feats_memory = obj_feats
             self.x_feats_memory = x_feats
             self.mask_preds_memory = scaled_mask_preds
         else:
-            cur_segm_results, query_output, cls_scores, mask_preds, scaled_mask_preds = self.roi_head.simple_test(
-                x_feats,
-                proposal_feats,
-                mask_preds,
+            (
+                cur_segm_results,
+                query_output,
                 cls_scores,
-                img_metas)
+                mask_preds,
+                scaled_mask_preds,
+            ) = self.roi_head.simple_test(
+                x_feats, proposal_feats, mask_preds, cls_scores, img_metas
+            )
 
         # for tracking part
         _, segm_result, mask_preds, panoptic_result, query_output = cur_segm_results[0]
         panoptic_seg, segments_info = panoptic_result
 
         # get sorted tracking thing ids, labels, masks, score for tracking
-        things_index_for_tracking, things_labels_for_tracking, thing_masks_for_tracking, things_score_for_tracking = \
-            self.get_things_id_for_tracking(panoptic_seg, segments_info)
-        things_labels_for_tracking = torch.Tensor(things_labels_for_tracking).to(cls_scores.device).long()
+        (
+            things_index_for_tracking,
+            things_labels_for_tracking,
+            thing_masks_for_tracking,
+            things_score_for_tracking,
+        ) = self.get_things_id_for_tracking(panoptic_seg, segments_info)
+        things_labels_for_tracking = (
+            torch.Tensor(things_labels_for_tracking).to(cls_scores.device).long()
+        )
 
         # get the semantic filter
         if self.semantic_filter:
-            seg_preds = torch.nn.functional.interpolate(seg_preds, panoptic_seg.shape, mode='bilinear',
-                                                        align_corners=False)
+            seg_preds = torch.nn.functional.interpolate(
+                seg_preds, panoptic_seg.shape, mode="bilinear", align_corners=False
+            )
             seg_preds = seg_preds.sigmoid()
             seg_out = seg_preds.argmax(1)
             semantic_thing = (seg_out < self.num_thing_classes).to(dtype=torch.float32)
         else:
-            semantic_thing = 1.
+            semantic_thing = 1.0
 
         if len(things_labels_for_tracking) > 0:
-            things_bbox_for_tracking = torch.zeros((len(things_score_for_tracking), 5),
-                                                   dtype=torch.float, device=x_feats.device)
-            things_bbox_for_tracking[:, 4] = torch.tensor(things_score_for_tracking,
-                                                          device=things_bbox_for_tracking.device)
+            things_bbox_for_tracking = torch.zeros(
+                (len(things_score_for_tracking), 5),
+                dtype=torch.float,
+                device=x_feats.device,
+            )
+            things_bbox_for_tracking[:, 4] = torch.tensor(
+                things_score_for_tracking, device=things_bbox_for_tracking.device
+            )
 
             thing_masks_for_tracking_final = []
             for mask in thing_masks_for_tracking:
-                thing_masks_for_tracking_final.append(torch.Tensor(mask).unsqueeze(0).to(
-                    x_feats.device).float())
-            thing_masks_for_tracking_final = torch.cat(thing_masks_for_tracking_final, 0)
+                thing_masks_for_tracking_final.append(
+                    torch.Tensor(mask).unsqueeze(0).to(x_feats.device).float()
+                )
+            thing_masks_for_tracking_final = torch.cat(
+                thing_masks_for_tracking_final, 0
+            )
             thing_masks_for_tracking = thing_masks_for_tracking_final
-            thing_masks_for_tracking_with_semantic_filter = thing_masks_for_tracking_final * semantic_thing
+            thing_masks_for_tracking_with_semantic_filter = (
+                thing_masks_for_tracking_final * semantic_thing
+            )
 
         if len(things_labels_for_tracking) == 0:
             track_feats = None
         else:
             # tracking embeddings
             N, _, _, _ = query_output.shape
-            emb_feat = query_output.squeeze(-2).squeeze(-1).unsqueeze(0)  # (n,d,1,1) -> (1,n,d)
+            emb_feat = (
+                query_output.squeeze(-2).squeeze(-1).unsqueeze(0)
+            )  # (n,d,1,1) -> (1,n,d)
 
             for emb_layer in self.embed_fcs:
                 emb_feat = emb_layer(emb_feat)
@@ -580,13 +699,16 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
             track_feats = self._track_forward([object_feats_embed_for_tracking])
 
         if track_feats is not None:
-            things_bbox_for_tracking[:, :4] = torch.tensor(tensor_mask2box(thing_masks_for_tracking_with_semantic_filter),
-                                                           device=things_bbox_for_tracking.device)
+            things_bbox_for_tracking[:, :4] = torch.tensor(
+                tensor_mask2box(thing_masks_for_tracking_with_semantic_filter),
+                device=things_bbox_for_tracking.device,
+            )
             bboxes, labels, ids = self.tracker.match(
                 bboxes=things_bbox_for_tracking,
                 labels=things_labels_for_tracking,
                 track_feats=track_feats,
-                frame_id=fid)
+                frame_id=fid,
+            )
 
             ids = ids + 1
             ids[ids == -1] = 0
@@ -597,16 +719,24 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
         else:
             ids = []
 
-
-        track_maps = self.generate_track_id_maps(ids, thing_masks_for_tracking, panoptic_seg)
+        track_maps = self.generate_track_id_maps(
+            ids, thing_masks_for_tracking, panoptic_seg
+        )
 
         semantic_map = self.get_semantic_seg(panoptic_seg, segments_info)
 
-        from scripts.visualizer import trackmap2rgb, cityscapes_cat2rgb, draw_bbox_on_img
+        from scripts.visualizer import (
+            cityscapes_cat2rgb,
+            draw_bbox_on_img,
+            trackmap2rgb,
+        )
+
         vis_tracker = trackmap2rgb(track_maps)
         vis_sem = cityscapes_cat2rgb(semantic_map)
         if len(things_labels_for_tracking):
-            vis_tracker = draw_bbox_on_img(vis_tracker, things_bbox_for_tracking.cpu().numpy())
+            vis_tracker = draw_bbox_on_img(
+                vis_tracker, things_bbox_for_tracking.cpu().numpy()
+            )
 
         # Visualization usage
         return semantic_map, track_maps, None, vis_sem, vis_tracker
@@ -631,18 +761,12 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
         x = self.extract_feat(img)
         # rpn
         num_imgs = len(img)
-        dummy_img_metas = [
-            dict(img_shape=(0, 0, 3)) for _ in range(num_imgs)
-        ]
+        dummy_img_metas = [dict(img_shape=(0, 0, 3)) for _ in range(num_imgs)]
         rpn_results = self.rpn_head.simple_test_rpn(x, dummy_img_metas)
-        (proposal_feats, x_feats, mask_preds, cls_scores,
-         seg_preds) = rpn_results
+        (proposal_feats, x_feats, mask_preds, cls_scores, seg_preds) = rpn_results
         roi_outs = self.roi_head.simple_test_mask_preds(
-            x_feats,
-            proposal_feats,
-            mask_preds,
-            cls_scores,
-            dummy_img_metas)
+            x_feats, proposal_feats, mask_preds, cls_scores, dummy_img_metas
+        )
         return roi_outs
 
     def extract_feat(self, img):
@@ -655,12 +779,12 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
     @property
     def with_rpn(self):
         """bool: whether the detector has RPN"""
-        return hasattr(self, 'rpn_head') and self.rpn_head is not None
+        return hasattr(self, "rpn_head") and self.rpn_head is not None
 
     @property
     def with_roi_head(self):
         """bool: whether the detector has a RoI head"""
-        return hasattr(self, 'roi_head') and self.roi_head is not None
+        return hasattr(self, "roi_head") and self.roi_head is not None
 
     def aug_test(self, x, proposal_list, img_metas, rescale=False, **kwargs):
         """Test with augmentations.
@@ -676,36 +800,50 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
         masks = []
         score = []
         for segment in seg_infos:
-            if segment['isthing'] == True:
+            if segment["isthing"] == True:
                 thing_mask = panoptic_seg == segment["id"]
                 masks.append(thing_mask)
                 idxs.append(segment["instance_id"])
-                labels.append(segment['category_id'])
-                score.append(segment['score'])
+                labels.append(segment["category_id"])
+                score.append(segment["score"])
         return idxs, labels, masks, score
 
     def pack_things_object(self, object_feats, ref_object_feats):
-        object_feats, ref_object_feats = object_feats.squeeze(-1).squeeze(-1), ref_object_feats.squeeze(-1).squeeze(-1)
-        thing_object_feats = torch.split(object_feats, [self.roi_head.num_proposals, self.num_stuff_classes], dim=1)[0]
-        ref_thing_object_feats = torch.split(ref_object_feats, [self.roi_head.num_proposals, self.num_stuff_classes], dim=1)[0]
+        object_feats, ref_object_feats = object_feats.squeeze(-1).squeeze(
+            -1
+        ), ref_object_feats.squeeze(-1).squeeze(-1)
+        thing_object_feats = torch.split(
+            object_feats, [self.roi_head.num_proposals, self.num_stuff_classes], dim=1
+        )[0]
+        ref_thing_object_feats = torch.split(
+            ref_object_feats,
+            [self.roi_head.num_proposals, self.num_stuff_classes],
+            dim=1,
+        )[0]
         return thing_object_feats, ref_thing_object_feats
 
     def pack_things_masks(self, mask_pred, ref_mask_pred):
-        thing_mask_pred = torch.split(mask_pred, [self.roi_head.num_proposals, self.num_stuff_classes], dim=1)[0]
-        ref_thing_thing_mask_pred = torch.split(ref_mask_pred, [self.roi_head.num_proposals, self.num_stuff_classes], dim=1)[0]
+        thing_mask_pred = torch.split(
+            mask_pred, [self.roi_head.num_proposals, self.num_stuff_classes], dim=1
+        )[0]
+        ref_thing_thing_mask_pred = torch.split(
+            ref_mask_pred, [self.roi_head.num_proposals, self.num_stuff_classes], dim=1
+        )[0]
         return thing_mask_pred, ref_thing_thing_mask_pred
 
     def get_semantic_seg(self, panoptic_seg, segments_info):
         kitti_step2cityscpaes = [11, 13]
         semantic_seg = np.zeros(panoptic_seg.shape)
         for segment in segments_info:
-            if segment['isthing'] == True:
+            if segment["isthing"] == True:
                 # for things
                 if self.kitti_step:
                     cat_cur = kitti_step2cityscpaes[segment["category_id"]]
                     semantic_seg[panoptic_seg == segment["id"]] = cat_cur
-                else:   # city and vip_seg
-                    semantic_seg[panoptic_seg == segment["id"]] = segment["category_id"] + self.num_stuff_classes
+                else:  # city and vip_seg
+                    semantic_seg[panoptic_seg == segment["id"]] = (
+                        segment["category_id"] + self.num_stuff_classes
+                    )
             else:
                 # for stuff (0 - n-1)
                 if self.kitti_step:
@@ -717,12 +855,13 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
                             offset += 1
                     cat_cur += offset
                     semantic_seg[panoptic_seg == segment["id"]] = cat_cur
-                else:   # city and vip_seg
-                    semantic_seg[panoptic_seg == segment["id"]] = segment["category_id"] - 1
+                else:  # city and vip_seg
+                    semantic_seg[panoptic_seg == segment["id"]] = (
+                        segment["category_id"] - 1
+                    )
         return semantic_seg
 
     def generate_track_id_maps(self, ids, masks, panopitc_seg_maps):
-
         final_id_maps = np.zeros(panopitc_seg_maps.shape)
 
         if len(ids) == 0:
@@ -736,13 +875,13 @@ class VideoKNetQuansiEmbedFCJointTrain(BaseDetector):
         return final_id_maps
 
     def add_ref_loss(self, loss_dict):
-        track_loss ={}
+        track_loss = {}
         for k, v in loss_dict.items():
-            track_loss[str(k)+"_ref"] = v
+            track_loss[str(k) + "_ref"] = v
         return track_loss
 
     def add_ref_rpn_loss(self, loss_dict):
         ref_rpn_loss = {}
         for k, v in loss_dict.items():
-            ref_rpn_loss[str(k) +"_ref_rpn"] = v
+            ref_rpn_loss[str(k) + "_ref_rpn"] = v
         return ref_rpn_loss
