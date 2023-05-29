@@ -19,12 +19,9 @@ def bitmasks2bboxes(bitmasks):
 
 @PIPELINES.register_module()
 class LoadImgDirect:
-    """Go ahead and just load image
-    """
+    """Go ahead and just load image"""
 
-    def __init__(self,
-                 to_float32=False,
-                 color_type='color'):
+    def __init__(self, to_float32=False, color_type="color"):
         self.to_float32 = to_float32
         self.color_type = color_type
 
@@ -41,20 +38,22 @@ class LoadImgDirect:
             'ori_shape' : original shape
             'img_fields' : the img fields
         """
-        img = mmcv.imread(results['img'], channel_order='rgb', flag=self.color_type)
+        img = mmcv.imread(results["img"], channel_order="rgb", flag=self.color_type)
         if self.to_float32:
             img = img.astype(np.float32)
 
-        results['img'] = img
-        results['img_shape'] = img.shape
-        results['ori_shape'] = img.shape
-        results['img_fields'] = ['img']
+        results["img"] = img
+        results["img_shape"] = img.shape
+        results["ori_shape"] = img.shape
+        results["img_fields"] = ["img"]
         return results
 
     def __repr__(self):
-        repr_str = (f'{self.__class__.__name__}('
-                    f'to_float32={self.to_float32}, '
-                    f"color_type='{self.color_type}', ")
+        repr_str = (
+            f"{self.__class__.__name__}("
+            f"to_float32={self.to_float32}, "
+            f"color_type='{self.color_type}', "
+        )
         return repr_str
 
 
@@ -87,23 +86,23 @@ class LoadMultiImagesDirect(LoadImgDirect):
 
 @PIPELINES.register_module()
 class LoadAnnotationsDirect:
-    """Go ahead and just load image
-    """
+    """Go ahead and just load image"""
 
-    def __init__(self,
-                 with_depth=True,
-                 divisor: int = 1000,
-                 cherry_pick=False,
-                 cherry=None,
-                 viper=False,
-                 vipseg=False
-                 ):
+    def __init__(
+        self,
+        with_depth=True,
+        divisor: int = 1000,
+        cherry_pick=False,
+        cherry=None,
+        viper=False,
+        vipseg=False,
+    ):
         self.with_depth = with_depth
         self.panseg_divisor = divisor
         self.cherry_pick = cherry_pick
         self.cherry = cherry
         self.viper = viper
-        self.vipseg=vipseg
+        self.vipseg = vipseg
         if self.vipseg:
             self.panseg_divisor = 1000
 
@@ -119,55 +118,72 @@ class LoadAnnotationsDirect:
         """
 
         if self.with_depth:
-            depth = mmcv.imread(results['depth'], flag='unchanged').astype(np.float32) / 256.
-            del results['depth']
-            depth[depth >= 80.] = 80.
-            results['gt_depth'] = depth
-            results['depth_fields'] = ['gt_depth']
+            depth = (
+                mmcv.imread(results["depth"], flag="unchanged").astype(np.float32)
+                / 256.0
+            )
+            del results["depth"]
+            depth[depth >= 80.0] = 80.0
+            results["gt_depth"] = depth
+            results["depth_fields"] = ["gt_depth"]
 
         local_divisor = 10000
         if self.panseg_divisor == 0:
             # The seperate file to store class id and inst id
-            gt_semantic_seg = mmcv.imread(results['ann_class'], flag='unchanged').astype(np.float32)
-            inst_map = mmcv.imread(results['ann_inst'], flag='unchanged').astype(np.float32)
+            gt_semantic_seg = mmcv.imread(
+                results["ann_class"], flag="unchanged"
+            ).astype(np.float32)
+            inst_map = mmcv.imread(results["ann_inst"], flag="unchanged").astype(
+                np.float32
+            )
             ps_id = gt_semantic_seg * local_divisor + inst_map
-            del results['ann_class']
-            del results['ann_inst']
+            del results["ann_class"]
+            del results["ann_inst"]
         elif self.panseg_divisor == -1:
             # KITTI step mode which means the panseg is stored with RGB
-            id_map = mmcv.imread(results['ann'], flag='color', channel_order='rgb')
+            id_map = mmcv.imread(results["ann"], flag="color", channel_order="rgb")
             gt_semantic_seg = id_map[..., 0].astype(np.float32)
-            inst_map = id_map[..., 1].astype(np.float32) * 256 + id_map[..., 2].astype(np.float32)
+            inst_map = id_map[..., 1].astype(np.float32) * 256 + id_map[..., 2].astype(
+                np.float32
+            )
             ps_id = gt_semantic_seg * local_divisor + inst_map
-            del results['ann']
+
+            del results["ann"]
         else:
-            ps_id = mmcv.imread(results['ann'], flag='unchanged').astype(np.float32)
+            ps_id = mmcv.imread(results["ann"], flag="unchanged").astype(np.float32)
             if self.vipseg:
-                ps_id = results['pre_hook'](ps_id)
-                del results['pre_hook']
+                ps_id = results["pre_hook"](ps_id)
+                del results["pre_hook"]
             # This is for viper
             if self.viper or self.vipseg:
                 ps_id[ps_id < 1000] *= 1000
-            del results['ann']
+            del results["ann"]
             gt_semantic_seg = ps_id // self.panseg_divisor
 
         if self.viper:
-            gt_semantic_seg[gt_semantic_seg >= results['thing_upper']] = results['no_obj_class']
-        results['gt_semantic_seg'] = gt_semantic_seg.astype(np.int)
-        results['seg_fields'] = ['gt_semantic_seg']
+            gt_semantic_seg[gt_semantic_seg >= results["thing_upper"]] = results[
+                "no_obj_class"
+            ]
+        results["gt_semantic_seg"] = gt_semantic_seg.astype(np.int)
+        results["seg_fields"] = ["gt_semantic_seg"]
 
         classes = []
         masks = []
         instance_ids = []
-        no_obj_class = results['no_obj_class']
+        no_obj_class = results["no_obj_class"]
         for pan_seg_id in np.unique(ps_id):
-            classes.append(pan_seg_id // self.panseg_divisor if self.panseg_divisor > 0
-                           else pan_seg_id // local_divisor)
+            classes.append(
+                pan_seg_id // self.panseg_divisor
+                if self.panseg_divisor > 0
+                else pan_seg_id // local_divisor
+            )
             masks.append((ps_id == pan_seg_id).astype(np.int))
             instance_ids.append(pan_seg_id)
         gt_labels = np.stack(classes).astype(np.int)
         gt_instance_ids = np.stack(instance_ids).astype(np.int)
-        gt_masks = BitmapMasks(masks, height=results['img_shape'][0], width=results['img_shape'][1])
+        gt_masks = BitmapMasks(
+            masks, height=results["img_shape"][0], width=results["img_shape"][1]
+        )
         # check the sanity of gt_masks
         verify = np.sum(gt_masks.masks.astype(np.int), axis=0)
         assert (verify == np.ones(gt_masks.masks.shape[-2:], dtype=verify.dtype)).all()
@@ -175,49 +191,58 @@ class LoadAnnotationsDirect:
         gt_masks.masks = np.delete(gt_masks.masks, gt_labels == no_obj_class, axis=0)
         gt_instance_ids = np.delete(gt_instance_ids, gt_labels == no_obj_class)
         gt_labels = np.delete(gt_labels, gt_labels == no_obj_class)
-        if results['is_instance_only'] and not self.cherry_pick:
+        if results["is_instance_only"] and not self.cherry_pick:
             gt_masks.masks = np.delete(
                 gt_masks.masks,
-                (gt_labels >= results['thing_upper']) | (gt_labels < results['thing_lower']),
-                axis=0
+                (gt_labels >= results["thing_upper"])
+                | (gt_labels < results["thing_lower"]),
+                axis=0,
             )
             gt_instance_ids = np.delete(
                 gt_instance_ids,
-                (gt_labels >= results['thing_upper']) | (gt_labels < results['thing_lower'])
+                (gt_labels >= results["thing_upper"])
+                | (gt_labels < results["thing_lower"]),
             )
             gt_labels = np.delete(
                 gt_labels,
-                (gt_labels >= results['thing_upper']) | (gt_labels < results['thing_lower'])
+                (gt_labels >= results["thing_upper"])
+                | (gt_labels < results["thing_lower"]),
             )
-            gt_labels -= results['thing_lower']
-        elif results['is_instance_only'] and self.cherry_pick:
+            gt_labels -= results["thing_lower"]
+        elif results["is_instance_only"] and self.cherry_pick:
             gt_masks.masks = np.delete(
                 gt_masks.masks,
                 list(map(lambda x: x not in self.cherry, gt_labels)),
-                axis=0
+                axis=0,
             )
             gt_instance_ids = np.delete(
                 gt_instance_ids,
                 list(map(lambda x: x not in self.cherry, gt_labels)),
             )
+
             gt_labels = np.delete(
                 gt_labels,
                 list(map(lambda x: x not in self.cherry, gt_labels)),
             )
-            gt_labels = np.array(list(map(lambda x: self.cherry.index(x), gt_labels))) if len(gt_labels) > 0 else []
+
+            gt_labels = (
+                np.array(list(map(lambda x: self.cherry.index(x), gt_labels)))
+                if len(gt_labels) > 0
+                else []
+            )
 
         if len(gt_labels) == 0:
             return None
 
-        results['gt_labels'] = gt_labels
-        results['gt_masks'] = gt_masks
-        results['gt_instance_ids'] = gt_instance_ids
-        results['mask_fields'] = ['gt_masks']
+        results["gt_labels"] = gt_labels
+        results["gt_masks"] = gt_masks
+        results["gt_instance_ids"] = gt_instance_ids
+        results["mask_fields"] = ["gt_masks"]
 
         # generate boxes
         boxes = bitmasks2bboxes(gt_masks)
-        results['gt_bboxes'] = boxes
-        results['bbox_fields'] = ['gt_bboxes']
+        results["gt_bboxes"] = boxes
+        results["bbox_fields"] = ["gt_bboxes"]
         return results
 
 
@@ -233,4 +258,5 @@ class LoadMultiAnnotationsDirect(LoadAnnotationsDirect):
             if _results is None:
                 return None
             outs.append(_results)
+
         return outs

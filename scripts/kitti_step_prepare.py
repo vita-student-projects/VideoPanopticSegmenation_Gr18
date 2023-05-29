@@ -6,9 +6,9 @@ val_seqs = [2, 6, 7, 8, 10, 13, 14, 16, 18]
 test_seqs = list(range(29))
 
 # your download the KITTI STEP dataset.
-data_root = os.path.expanduser('/data/data1/datasets/STEP/kitti/training/')
-data_root_test = os.path.expanduser('/data/data1/datasets/STEP/kitti/testing/')
-data_out = os.path.expanduser('/data/data1/datasets/STEP/kitti_out')
+data_root = os.path.expanduser('/home/nabiakl/kitti-step-2/training/')
+data_root_test = os.path.expanduser('/home/nabiakl/kitti-step-2/testing/')
+data_out = os.path.expanduser('/home/nabiakl/kitti_out')
 
 
 def build_panoptic(seq_id, input_dir, output_dir):

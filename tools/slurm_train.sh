@@ -7,8 +7,8 @@ JOB_NAME=$2
 CONFIG=$3
 WORK_DIR=$4
 GPUS=${GPUS:-1}
-GPUS_PER_NODE=${GPUS_PER_NODE:-1}
-CPUS_PER_TASK=${CPUS_PER_TASK:-1}
+GPUS_PER_NODE=${GPUS_PER_NODE:-4}
+CPUS_PER_TASK=${CPUS_PER_TASK:-5}
 SRUN_ARGS=${SRUN_ARGS:-""}
 PY_ARGS=${@:5}
 
@@ -21,4 +21,4 @@ srun -p ${PARTITION} \
     --cpus-per-task=${CPUS_PER_TASK} \
     --kill-on-bad-exit=1 \
     ${SRUN_ARGS} \
-    python -u /home/mahassan/Video-K-Net/tools/train.py ${CONFIG} --work-dir=${WORK_DIR} --launcher="slurm" ${PY_ARGS}
+    python -u /home/nabiakl/Video-K-Net/tools/train.py ${CONFIG} --work-dir=${WORK_DIR} --launcher="slurm" ${PY_ARGS}

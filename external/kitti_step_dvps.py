@@ -52,7 +52,9 @@ class KITTISTEPDVPSDataset:
                  ):
         assert data_root is not None
         data_root = os.path.expanduser(data_root)
-        video_seq_dir = os.path.join(data_root, 'video_sequence', split)
+        print("data root ", data_root)
+        video_seq_dir = os.path.join("/home/nabiakl/kitti_out", 'video_sequence', split)
+        print(" video sequence ", video_seq_dir)
         assert os.path.exists(video_seq_dir)
         assert 'leftImg8bit' not in video_seq_dir
 

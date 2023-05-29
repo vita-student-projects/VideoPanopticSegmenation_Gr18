@@ -26,7 +26,7 @@ def single_gpu_test(model,
                     show_score_thr=0.3,
                     with_semantic_input=False,
                     rescale_depth=False,
-                    with_seq=False,
+                    with_seq=True,
                     ):
     if out_dir is None:
         out_dir = './out'
@@ -269,7 +269,7 @@ def main():
     # Inference the sequence
     outputs, pred_pans_2ch = single_gpu_test(model, data_loader, args.show, args.show_dir,
                                              args.show_score_thr, with_semantic_input=args.semantic,
-                                             rescale_depth=args.rescale_depth, with_seq=args.with_seq)
+                                             rescale_depth=args.rescale_depth, with_seq=True)
     print("==>Inference Depth VPS Done!")
 
     # Evaluation Part

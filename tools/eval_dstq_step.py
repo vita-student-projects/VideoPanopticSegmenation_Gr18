@@ -15,7 +15,7 @@ from tools.utils.STQ import STQuality
 def parse_args():
     parser = argparse.ArgumentParser(description='Evaluation of DSTQ')
     parser.add_argument('result_path')
-    parser.add_argument('--gt-path', default='data/kitti-step')
+    parser.add_argument('--gt-path', default='/home/nabiakl/kitti_out/')
     parser.add_argument('--split', default='val')
     parser.add_argument(
         '--depth',
@@ -123,4 +123,4 @@ if __name__ == '__main__':
     result_path = args.result_path
     gt_path = args.gt_path
     split = args.split
-    eval_dstq(result_path, os.path.join(gt_path, 'video_sequence', split), [2, 6, 7, 8, 10, 13, 14, 16, 18], args.depth)
+    eval_dstq(result_path, os.path.join(gt_path, 'video_sequence', split), [2, 6, 7, 8, 10, 13, 14, 16, 18], False)

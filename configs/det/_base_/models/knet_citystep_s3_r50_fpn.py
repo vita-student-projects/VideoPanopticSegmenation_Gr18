@@ -2,6 +2,7 @@ num_stages = 3
 num_proposals = 100
 conv_kernel_size = 1
 
+find_unused_parameters=True
 model = dict(
     type="KNet",
     cityscapes=False,
@@ -24,8 +25,8 @@ model = dict(
         in_channels=[256, 512, 1024, 2048],
         out_channels=256,
         start_level=0,
-        add_extra_convs="on_input",
-        num_outs=5,
+        add_extra_convs="on_output",
+        num_outs=8,
     ),
     rpn_head=dict(
         type="ConvKernelHead",

@@ -1,5 +1,5 @@
 dataset_type = "CityscapesSTEP"
-data_root = "/home/mahassan/Video-K-Net/data/cityscapes"
+data_root = "/home/nabiakl/Video-K-Net/data/cityscapes"
 
 img_norm_cfg = dict(
     mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True
