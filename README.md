@@ -8,7 +8,7 @@ This project aims to further enhance the performance of the Video-K-Net model fo
 
 The requirements to run the repo can be found in "requirements.txt".
 
-We have also built a [docker image]() with all these requirements for ease of use.
+We have also built a [docker image](https://hub.docker.com/repository/docker/nayabiakl/video-k-net-dlav/general) with all these requirements for ease of use.
 
 **As for the dataset preparation, please refer to [**DATASET.md**](./DATASET.md) for all the steps to follow to prepare the three datasets used.**
 
