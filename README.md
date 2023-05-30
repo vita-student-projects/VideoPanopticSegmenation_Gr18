@@ -51,7 +51,7 @@ python tools/make_video.py
 
 As stated in our project milestone, we added two contributions to the original Video-K-Net model:
 
-1. Increase the FPN layers up to P8 to improve the segmentation accuracy. This was done for the pretraining of the K-Net and for the training of the Video-K-Net model. In fact, to be able to compare with the baseline model, we performed the following experiments:
+1. The first contribution suggested regards the architecture of the K-Net model itself. As explained in the original paper, for panoptic segmentation, semantic FPN with feature maps P2 to P5 is adopted. On top of that, positional encoding is calculated based on P5 and added to it. Since the feature space is capped at P5, we believe that increasing the number of layers up to P8 could improve performance. This is based on "Revisiting multi-scale feature fusion for semantic segmentation” paper where they prove that a larger feature space, is more effective than a conventional space stopped at P5. The model used with these extra feature spaces also achieves state-of-the-art performance on the Cityscapes dataset. Inspired by this, our contribution will be to increase the FPN layers up to P8 with the hypothesis that this would improve the segmentation accuracy. This was done for the pretraining of the K-Net and for the training of the Video-K-Net model. In fact, to be able to compare with the baseline model, we performed the following experiments:
 
     Case A - Baseline: we use the pretrained K-Net model checkpoint and train the Video-K-Net model as is without any modifications. We re-did the baseline training and did not rely on the results given in the paper since the settings of the training are not identical (number of GPUs used mainly) and this could affect the results obtained.
 
@@ -72,7 +72,7 @@ As stated in our project milestone, we added two contributions to the original V
 
 ### Pretraining and training checkpoints
 
-The checkpoints for our pretraining and training can be found in [this folder](https://drive.google.com/drive/folders/1l1rVqQaE6VCfgHc50QEUXW-4EbYqokN2?usp=sharing) on Google Drive.
+The checkpoints for our pretraining and training can be found in [this folder](https://drive.google.com/drive/folders/1l1rVqQaE6VCfgHc50QEUXW-4EbYqokN2?usp=sharing) on Google Drive. All the videos presented and the presentation video are also included. 
 
 
 | Checkpoint name                            | Refers to                                                                 |
